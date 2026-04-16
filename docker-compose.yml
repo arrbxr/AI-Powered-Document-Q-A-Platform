@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL with pgvector extension
+  postgres-vector:
+    image: pgvector/pgvector:pg16
+    container_name: doc-qa-postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: document_qa
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - doc-qa-network
+
+  # 2. Apache Kafka (Message Broker)
+  kafka:
+    image: confluentinc/cp-kafka
+    container_name: doc-qa-kafka
+    environment:
+      # KRaft mode (No Zookeeper needed)
+      KAFKA_ENABLE_KRAFT: 'yes'
+      KAFKA_CFG_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CFG_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093'
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+      KAFKA_CFG_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092'
+      KAFKA_CFG_BROKER_ID: 1
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093'
+      ALLOW_PLAINTEXT_LISTENER: 'yes'
+    ports:
+      - "9092:9092"
+    networks:
+      - doc-qa-network
+
+  # 3. MinIO (Local Object Storage / S3 Alternative)
+  minio:
+    image: minio/minio
+    container_name: doc-qa-minio
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # API Port (For Spring Boot)
+      - "9001:9001"   # Web UI Port (For us to view files)
+    volumes:
+      - minio_data:/data
+    networks:
+      - doc-qa-network
+
+# Define persistent storage
+volumes:
+  postgres_data:
+  minio_data:
+
+# Define a shared network so they can talk to each other
+networks:
+  doc-qa-network:
+    driver: bridge
