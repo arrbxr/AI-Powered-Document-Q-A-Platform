@@ -1,5 +1,8 @@
 package com.docqa.ingestion_service.service;
 
+import com.docqa.ingestion_service.model.DocumentMetadata;
+import com.docqa.ingestion_service.repository.DocumentRepository;
+import com.docqa.ingestion_service.util.DocumentStatus;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
@@ -12,6 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.security.MessageDigest;
+import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -22,12 +28,14 @@ public class IngestionService {
     private final MinioClient minioClient;
     private final KafkaTemplate<String, String> kafkaTemplate;
 
+    private final DocumentRepository documentRepository;
+
     @Value("${minio.bucket-name}")
     private String bucketName;
 
     // Kafka topic name
-    private static final String KAFKA_TOPIC = "document-ingestion-topic";
-
+    @Value("${spring.kafka.topic.ingestion}")
+    private String KAFKA_TOPIC;
 
     public String processUploadedFile(MultipartFile file){
         // 0. Validation of file type - Check if the file is actually a PDF
@@ -36,12 +44,24 @@ public class IngestionService {
             throw new IllegalArgumentException("Invalid file format! Only PDF files are allowed");
         }
 
-        // 1. Generate a Unique ID (To prevent file overwrite)
+        // 1. IDEMPOTENCY CHECK: File ka fingerprint (hash)
+        String fileHash = calculateChecksum(file);
+
+        // 2. Database me check karo kya ye fingerprint pehle se hai?
+        Optional<DocumentMetadata> existingDoc = documentRepository.findByFileHash(fileHash);
+        if(existingDoc.isPresent()){
+            String existingId = existingDoc.get().getDocumentId();
+            log.info("Duplicate file detected! Skipping upload. Existing ID: {}", existingId);
+            // Agar file pehle se hai, toh purana ID bhej do aur yahin se return ho jao!
+            return existingId;
+        }
+
+        // 3. Agar naya unique file hai - Generate a Unique ID
         String documentId = UUID.randomUUID().toString();
         String objectName = documentId + ".pdf";
 
         try {
-            // 2. To ensure MinIO bucket exists, create if not
+            // 4. To ensure MinIO bucket exists, create if not
             boolean found = minioClient.bucketExists(BucketExistsArgs
                             .builder()
                             .bucket(bucketName).build());
@@ -54,7 +74,7 @@ public class IngestionService {
                 log.info("Created new MinIO bucket: {}", bucketName);
             }
 
-            // 3. Upload file to MinIO (here I'm using try-with-resources to avoid memory leak)
+            // 5. Upload file to MinIO (here I'm using try-with-resources to avoid memory leak)
             try(InputStream inputStream = file.getInputStream()){
                 minioClient.putObject(
                         PutObjectArgs.builder()
@@ -67,7 +87,21 @@ public class IngestionService {
                 log.info("File successfully saved to MinIO. Document ID: {}", documentId);
             }
 
-            // 4. Publish event to kafka (The Fire & Forget part)
+            // 6. Database me State Save karo (UPLOADED status ke sath)
+            DocumentMetadata metadata = DocumentMetadata.builder()
+                    .documentId(documentId)
+                    .fileHash(fileHash)
+                    .fileName(file.getOriginalFilename())
+                    .objectName(objectName)
+                    .bucketName(bucketName)
+                    .status(DocumentStatus.UPLOADED)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+
+            documentRepository.save(metadata);
+            log.info("Metadata saved to database for Document ID: {}", documentId);
+
+            // 7. Publish event to kafka (The Fire & Forget part)
             // Hum ek simple JSON structure bhej rahe hain
             String eventPayload = String.format("{\"documentId\":\"%s\", \"status\":\"UPLOADED\"}", documentId);
 
@@ -82,6 +116,24 @@ public class IngestionService {
             log.error("Failed to process document ingestion for ID: {}", documentId, e);
             // Throwing runtime exception taaki Controller isko catch karke 500 error de sake
             throw new RuntimeException("Error processing file ingestion: " + e.getMessage());
+        }
+    }
+
+    // Helper Method: SHA-256 Hash nikalne ke liye
+    private String calculateChecksum(MultipartFile file){
+        try {
+            byte[] data = file.getBytes();
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(data);
+            StringBuilder sb = new StringBuilder();
+
+            for (byte b: hash){
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+
+        } catch (Exception e){
+            log.error("Failed to calculate SHA-256 hash", e);
+            throw new RuntimeException("Hash calculation failed", e);
         }
     }
 
