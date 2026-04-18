@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/AI-Powered-Document-QA.iml" filepath="$PROJECT_DIR$/AI-Powered-Document-QA.iml" />
+      <module fileurl="file://$PROJECT_DIR$/ingestion-service/ingestion-service.iml" filepath="$PROJECT_DIR$/ingestion-service/ingestion-service.iml" />
     </modules>
   </component>
 </project>

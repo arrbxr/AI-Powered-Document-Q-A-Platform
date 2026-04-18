@@ -1,8 +1,13 @@
 package com.docqa.ingestion_service.service;
 
+import com.docqa.ingestion_service.kafka.KafkaPublisherService;
 import com.docqa.ingestion_service.model.DocumentMetadata;
+import com.docqa.ingestion_service.model.OutboxEvent;
 import com.docqa.ingestion_service.repository.DocumentRepository;
+import com.docqa.ingestion_service.repository.OutboxEventRepository;
 import com.docqa.ingestion_service.util.DocumentStatus;
+import com.docqa.ingestion_service.util.OutboxStatus;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
@@ -26,16 +31,13 @@ import java.util.UUID;
 public class IngestionService {
 
     private final MinioClient minioClient;
-    private final KafkaTemplate<String, String> kafkaTemplate;
 
     private final DocumentRepository documentRepository;
+    private final KafkaPublisherService kafkaPublisherService;
 
     @Value("${minio.bucket-name}")
     private String bucketName;
 
-    // Kafka topic name
-    @Value("${spring.kafka.topic.ingestion}")
-    private String KAFKA_TOPIC;
 
     public String processUploadedFile(MultipartFile file){
         // 0. Validation of file type - Check if the file is actually a PDF
@@ -104,10 +106,7 @@ public class IngestionService {
             // 7. Publish event to kafka (The Fire & Forget part)
             // Hum ek simple JSON structure bhej rahe hain
             String eventPayload = String.format("{\"documentId\":\"%s\", \"status\":\"UPLOADED\"}", documentId);
-
-            // Sending event: (Topic, Partition Key, Message)
-            kafkaTemplate.send(KAFKA_TOPIC, documentId, eventPayload);
-            log.info("Event published to Kafka topic [{}] for Document ID: {}", KAFKA_TOPIC, documentId);
+            kafkaPublisherService.publishToKafka(documentId, eventPayload);
 
             // Return the ID to the Controller so user gets a tracking number
             return documentId;
@@ -118,6 +117,7 @@ public class IngestionService {
             throw new RuntimeException("Error processing file ingestion: " + e.getMessage());
         }
     }
+
 
     // Helper Method: SHA-256 Hash nikalne ke liye
     private String calculateChecksum(MultipartFile file){

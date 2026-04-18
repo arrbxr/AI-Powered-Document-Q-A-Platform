@@ -36,14 +36,22 @@ spring:
       max-file-size: 10MB # Ek baar me 10MB se badi PDF allow nahi karenge
       max-request-size: 10MB
 
-
-
 # Custom MinIO Configuration
 minio:
   url: http://localhost:9000
   access-key: admin
   secret-key: admin12345
   bucket-name: raw-document
+
+# resilience4j configuration
+resilience4j:
+  circuitbreaker:
+    instances:
+      kafkaBreaker:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 2
 
 
 
