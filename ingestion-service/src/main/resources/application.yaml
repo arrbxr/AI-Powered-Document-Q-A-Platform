@@ -1,0 +1,31 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: ingestion-service
+
+  # Kafka Producer Configuration
+  kafka:
+    producer:
+      bootstrap-servers: localhost:9092
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  # Multipart (File upload) Configuration
+  servlet:
+    multipart:
+      max-file-size: 10MB # Ek baar me 10MB se badi PDF allow nahi karenge
+      max-request-size: 10MB
+
+
+
+# Custom MinIO Configuration
+minio:
+  url: http://localhost:9000
+  access-key: admin
+  secret-key: password123
+  bucket-name: raw-document
+
+
+
