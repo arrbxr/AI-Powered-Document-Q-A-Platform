@@ -1,7 +1,9 @@
 version: '3.8'
 
 services:
-  # 1. PostgreSQL with pgvector extension
+  # ==========================================
+  # 1. INGESTION SERVICE DATABASE (Port 5432)
+  # ==========================================
   postgres-vector:
     image: pgvector/pgvector:pg16
     container_name: doc-qa-postgres
@@ -16,7 +18,26 @@ services:
     networks:
       - doc-qa-network
 
-  # 2. Confluent Kafka (KRaft Mode - No Zookeeper)
+  # ==========================================
+  # 2. WORKER SERVICE DATABASE (Port 5433)
+  # ==========================================
+  worker-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: doc-qa-worker-postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin12345
+      POSTGRES_DB: document_worker_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - worker_postgres_data:/var/lib/postgresql/data
+    networks:
+      - doc-qa-network
+
+  # ==========================================
+  # 3. KAFKA (KRaft Mode) & UI
+  # ==========================================
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: doc-qa-kafka
@@ -52,7 +73,9 @@ services:
     networks:
       - doc-qa-network
 
-  # 3. MinIO (Local Object Storage / S3 Alternative)
+  # ==========================================
+  # 4. MINIO (Object Storage)
+  # ==========================================
   minio:
     image: minio/minio
     container_name: doc-qa-minio
@@ -68,9 +91,12 @@ services:
     networks:
       - doc-qa-network
 
-# Define persistent storage
+# ==========================================
+# VOLUMES & NETWORKS
+# ==========================================
 volumes:
   postgres_data:
+  worker_postgres_data:
   minio_data:
 
 # Define a shared network so they can talk to each other

@@ -1,0 +1,65 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: worker-service
+
+  # Database Config (DLQ ya future embedding ke liye)
+  datasource:
+    url: jdbc:postgresql://localhost:5433/document_worker_db
+    username: admin
+    password: admin12345
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: ai-worker-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+    # Topic Name hum explicitly define kar dete hain
+    topic:
+      ingestion: document-ingestion-topic
+
+  ai:
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        project-id: "gen-lang-client-0964421526"
+        chat:
+          options:
+            model: gemini-2.5-flash
+
+        embedding:
+          api-key: ${GEMINI_API_KEY}
+#          options:
+#            model: embedding-001
+#          text:
+#            options:
+#              model: text-embedding-004
+#              dimensions: 768
+
+    vectorstore:
+      pgvector:
+        index-type: NONE            # Best algorithm for fast vector search
+        distance-type: COSINE_DISTANCE # AI standard for comparing meaning
+        dimensions: 3072           # Gemini model outputs 768 numbers
+        initialize-schema: true     # MAGIC: Ye true rakhne se table automatically ban jayegi!
+
+# MinIO Configuration
+minio:
+  url: http://localhost:9000
+  access-key: admin
+  secret-key: admin12345
+  bucket-name: raw-document
+
+
+
