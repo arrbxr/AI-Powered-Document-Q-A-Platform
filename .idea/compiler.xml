@@ -9,13 +9,14 @@
         <outputRelativeToContentRoot value="true" />
         <module name="worker-service" />
       </profile>
-      <profile name="Annotation profile for worker-service" enabled="true">
+      <profile name="Annotation profile for query-service" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <processorPath useClasspath="false">
           <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.44/lombok-1.18.44.jar" />
         </processorPath>
+        <module name="query-service" />
         <module name="ingestion-service" />
       </profile>
     </annotationProcessing>
@@ -23,6 +24,7 @@
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="ingestion-service" options="-parameters" />
+      <module name="query-service" options="-parameters" />
       <module name="worker-service" options="-parameters" />
     </option>
   </component>

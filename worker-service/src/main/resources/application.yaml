@@ -51,7 +51,7 @@ spring:
       pgvector:
         index-type: NONE            # Best algorithm for fast vector search
         distance-type: COSINE_DISTANCE # AI standard for comparing meaning
-        dimensions: 3072           # Gemini model outputs 768 numbers
+        dimensions: 3072           # Gemini model outputs 3072 numbers
         initialize-schema: true     # MAGIC: Ye true rakhne se table automatically ban jayegi!
 
 # MinIO Configuration
