@@ -34,18 +34,9 @@ spring:
       genai:
         api-key: ${GEMINI_API_KEY}
         project-id: "gen-lang-client-0964421526"
-        chat:
-          options:
-            model: gemini-2.5-flash
 
         embedding:
           api-key: ${GEMINI_API_KEY}
-#          options:
-#            model: embedding-001
-#          text:
-#            options:
-#              model: text-embedding-004
-#              dimensions: 768
 
     vectorstore:
       pgvector:
