@@ -1,3 +1,31 @@
+server:
+  port: 8083
+
 spring:
   application:
     name: query-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/document_worker_db
+    username: admin
+    password: admin12345
+
+  ai:
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        chat:
+          options:
+            model: gemini-2.5-flash
+
+        embedding:
+          api-key: ${GEMINI_API_KEY}
+          options:
+            model: text-embedding-004
+
+    vectorstore:
+      pgvector:
+        dimensions: 3072
+        initialize-schema: false
+        index-type: NONE
+        distance-type: COSINE_DISTANCE
