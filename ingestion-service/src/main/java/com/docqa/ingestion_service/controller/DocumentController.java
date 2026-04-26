@@ -7,10 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
@@ -54,6 +51,13 @@ public class DocumentController {
                     "message", "An unexpected error occurred during upload."
             ));
         }
+    }
+
+    @GetMapping("/status/{documentId}")
+    public ResponseEntity<Map<String, String>> getDocumentStatus(@PathVariable String documentId){
+        return ingestionService.checkDocumentStaus(documentId)
+                .map(doc -> ResponseEntity.ok(Map.of("status", doc.getStatus().name())))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
 

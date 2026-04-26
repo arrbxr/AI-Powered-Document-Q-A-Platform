@@ -118,6 +118,10 @@ public class IngestionService {
         }
     }
 
+    public Optional<DocumentMetadata> checkDocumentStaus(String documentId){
+        return documentRepository.findById(documentId);
+    }
+
 
     // Helper Method: SHA-256 Hash nikalne ke liye
     private String calculateChecksum(MultipartFile file){
