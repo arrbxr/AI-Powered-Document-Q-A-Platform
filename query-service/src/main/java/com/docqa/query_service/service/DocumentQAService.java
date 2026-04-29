@@ -30,7 +30,7 @@ public class DocumentQAService {
         // 1. Vector Database me Similarity Search + Metadata Filter
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(question)
-                .topK(5) // Sabse relevant 3 paragraphs
+                .topK(5) // Sabse relevant 5 paragraphs
                 .filterExpression("documentId == '" + documentId + "'") // Metadata filter
                 .similarityThreshold(0.5) // Optional: Sirf wahi lao jo 50% se zyada match ho
                 .build();
