@@ -10,6 +10,11 @@ spring:
     username: admin
     password: admin12345
 
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
   ai:
     google:
       genai:
@@ -22,6 +27,17 @@ spring:
           api-key: ${GEMINI_API_KEY}
           options:
             model: text-embedding-004
+
+    # Deepseek API
+    openai:
+      api-key: ${DEEPSEEK_API_KEY}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-v4-flash
+      embedding:
+        enabled: false
+
 
     vectorstore:
       pgvector:

@@ -1,19 +1,15 @@
 package com.docqa.query_service.service;
 
-import com.docqa.query_service.entity.ChatHistory;
-import com.docqa.query_service.repository.ChatHistoryRepository;
-import lombok.AllArgsConstructor;
-import lombok.RequiredArgsConstructor;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -22,13 +18,18 @@ import java.util.stream.Collectors;
 public class DocumentQAService {
 
     private final VectorStore vectorStore;
-    private final ChatClient chatClient;
+    private final ChatClient geminiClient;
+    private final ChatClient deepseekClient;
     private final ChatHistoryService chatHistoryService;
 
 
-    public DocumentQAService(VectorStore vectorStore, ChatModel chatModel, ChatHistoryService chatHistoryService) {
+    public DocumentQAService(VectorStore vectorStore,
+                             @Qualifier("geminiClient") ChatClient geminiClient,
+                             @Qualifier("deepseekClient") ChatClient deepseekClient,
+                             ChatHistoryService chatHistoryService) {
         this.vectorStore = vectorStore;
-        this.chatClient = ChatClient.builder(chatModel).build();
+        this.geminiClient = geminiClient;
+        this.deepseekClient = deepseekClient;
         this.chatHistoryService = chatHistoryService;
     }
 
@@ -71,7 +72,21 @@ public class DocumentQAService {
         );
 
         // 6. To get the answer for AI
-        String aiAnswer = chatClient.prompt(prompt).call().content();
+        String aiAnswer;
+        try {
+            log.info("Trying Gemini...");
+            aiAnswer = geminiClient.prompt(prompt).call().content();
+
+        } catch (Exception e) {
+            log.error("Gemini failed, switching to DeepSeek", e);
+
+            try {
+                aiAnswer = deepseekClient.prompt(prompt).call().content();
+            } catch (Exception ex) {
+                log.error("DeepSeek also failed", ex);
+                throw new RuntimeException("Both AI providers failed");
+            }
+        }
 
         // 7. Saving history in database
         try {
