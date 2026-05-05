@@ -4,7 +4,6 @@ package com.docqa.ingestion_service.controller;
 import com.docqa.ingestion_service.service.IngestionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -26,32 +25,15 @@ public class DocumentController {
     public ResponseEntity<?> uploadDocument(@RequestParam("file") MultipartFile multipartFile){
         log.info("Received upload request for file: {}", multipartFile.getOriginalFilename());
 
-        try {
-            // Service ko file pass karo aur Document ID receive karo
-            String documentId = ingestionService.processUploadedFile(multipartFile);
+        // Service ko file pass karo aur Document ID receive karo
+        String documentId = ingestionService.processUploadedFile(multipartFile);
 
-            // 200 OK, ke sath proper JSON response bhejo
-            return ResponseEntity.ok(Map.of(
-               "status", "success",
-                    "message", "Document uploaded successfully and queued for processing.",
-                    "documentId", documentId
-            ));
-
-        } catch (IllegalArgumentException e){
-            // Hamara Fail Fast validation error yaha catch hoga (400 Bad Request)
-            log.warn("Upload rejected: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
-                    "status", "error",
-                    "message", e.getMessage()
-            ));
-        } catch (Exception e){
-            // Agar MinIO ya Kafka down hua toh ye catch hoga (500 Internal Server Error)
-            log.error("Internal Server Error during upload", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                    "status", "error",
-                    "message", "An unexpected error occurred during upload."
-            ));
-        }
+        // 200 OK, ke sath proper JSON response bhejo
+        return ResponseEntity.ok(Map.of(
+           "status", "success",
+                "message", "Document uploaded successfully and queued for processing.",
+                "documentId", documentId
+        ));
     }
 
     @GetMapping("/status/{documentId}")
@@ -60,6 +42,5 @@ public class DocumentController {
                 .map(doc -> ResponseEntity.ok(Map.of("status", doc.getStatus().name())))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
-
 
 }

@@ -1,5 +1,6 @@
 package com.docqa.ingestion_service.kafka;
 
+import com.docqa.ingestion_service.exception.KafkaPublishException;
 import com.docqa.ingestion_service.model.OutboxEvent;
 import com.docqa.ingestion_service.repository.OutboxEventRepository;
 import com.docqa.ingestion_service.util.OutboxStatus;
@@ -32,7 +33,7 @@ public class KafkaPublisherService {
             kafkaTemplate.send(KAFKA_TOPIC, documentId, eventPayload).get();
             log.info("Event published to Kafka topic [{}] for Document ID: {}", KAFKA_TOPIC, documentId);
         }catch (Exception e) {
-            throw new RuntimeException("Kafka publish failed", e);
+            throw new KafkaPublishException("Failed to publish event to Kafka for Document ID: " + documentId, e);
         }
     }
 

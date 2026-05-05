@@ -1,5 +1,6 @@
 package com.docqa.ingestion_service.service;
 
+import com.docqa.ingestion_service.exception.DocumentProcessingException;
 import com.docqa.ingestion_service.kafka.KafkaPublisherService;
 import com.docqa.ingestion_service.model.DocumentMetadata;
 import com.docqa.ingestion_service.model.OutboxEvent;
@@ -113,8 +114,7 @@ public class IngestionService {
 
         } catch (Exception e){
             log.error("Failed to process document ingestion for ID: {}", documentId, e);
-            // Throwing runtime exception taaki Controller isko catch karke 500 error de sake
-            throw new RuntimeException("Error processing file ingestion: " + e.getMessage());
+            throw new DocumentProcessingException("MinIO or Database processing failed for document ID: " + documentId, e);
         }
     }
 
@@ -137,7 +137,7 @@ public class IngestionService {
 
         } catch (Exception e){
             log.error("Failed to calculate SHA-256 hash", e);
-            throw new RuntimeException("Hash calculation failed", e);
+            throw new DocumentProcessingException("Failed to generate file fingerprint", e);
         }
     }
 
