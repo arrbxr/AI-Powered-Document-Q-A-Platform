@@ -19,17 +19,17 @@ public class DocumentQAService {
 
     private final VectorStore vectorStore;
     private final ChatClient geminiClient;
-    private final ChatClient deepseekClient;
+    private final ChatClient groqClient;
     private final ChatHistoryService chatHistoryService;
 
 
     public DocumentQAService(VectorStore vectorStore,
                              @Qualifier("geminiClient") ChatClient geminiClient,
-                             @Qualifier("deepseekClient") ChatClient deepseekClient,
+                             @Qualifier("groqClient") ChatClient groqClient,
                              ChatHistoryService chatHistoryService) {
         this.vectorStore = vectorStore;
         this.geminiClient = geminiClient;
-        this.deepseekClient = deepseekClient;
+        this.groqClient = groqClient;
         this.chatHistoryService = chatHistoryService;
     }
 
@@ -74,16 +74,17 @@ public class DocumentQAService {
         // 6. To get the answer for AI
         String aiAnswer;
         try {
-            log.info("Trying Gemini...");
-            aiAnswer = geminiClient.prompt(prompt).call().content();
+            log.info("Trying Groq...");
+            aiAnswer = groqClient.prompt(prompt).call().content();
 
         } catch (Exception e) {
-            log.error("Gemini failed, switching to DeepSeek", e);
+            log.error("Groq failed, switching to Gemini", e);
 
             try {
-                aiAnswer = deepseekClient.prompt(prompt).call().content();
+                log.info("Trying Gemini...");
+                aiAnswer = geminiClient.prompt(prompt).call().content();
             } catch (Exception ex) {
-                log.error("DeepSeek also failed", ex);
+                log.error("Gemini also failed", ex);
                 throw new RuntimeException("Both AI providers failed");
             }
         }

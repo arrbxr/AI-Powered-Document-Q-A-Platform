@@ -28,13 +28,13 @@ spring:
           options:
             model: text-embedding-004
 
-    # Deepseek API
+    # groq API
     openai:
-      api-key: ${DEEPSEEK_API_KEY}
-      base-url: https://api.deepseek.com
+      api-key: ${GROQ_API_KEY}
+      base-url: https://api.groq.com/openai
       chat:
         options:
-          model: deepseek-v4-flash
+          model: llama-3.1-8b-instant
       embedding:
         enabled: false
 
