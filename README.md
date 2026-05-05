@@ -15,7 +15,7 @@ A modern microservices-based platform that enables users to upload PDF and docum
 
 ## 📋 System Architecture
 
-<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/302ec7ee-dca3-4450-9a2e-b51060be050d" />
+<img width="968" height="840" alt="image" src="https://github.com/user-attachments/assets/c3b88d60-d330-49b8-98f1-c21f1f240dde" />
 
 
 ## 🛠️ Tech Stack
