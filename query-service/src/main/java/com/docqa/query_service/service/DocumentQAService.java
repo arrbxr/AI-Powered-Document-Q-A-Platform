@@ -11,8 +11,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -41,29 +40,51 @@ public class DocumentQAService {
         // 1. Fetching history
         String chatHistory = chatHistoryService.getHistory(documentId);
 
-        // 2. Search Similarity on vector database
-        SearchRequest searchRequest = SearchRequest.builder()
-                .query(question)
-                .topK(5)
-                .filterExpression("documentId == '" + documentId + "'")
-                .similarityThreshold(0.5)
-                .build();
+        // 2. Query Expansion (Generate variations)
+        List<String> queryVariation = generateQueryVariations(question);
 
-        List<Document> similarChunks = vectorStore.similaritySearch(searchRequest);
+        // 3. Multi-Query Vector Search
+        Set<Document> combinedUniqueChunks = new LinkedHashSet<>();
 
-        if(similarChunks.isEmpty()){
+        for(String variant: queryVariation){
+            log.info("Running Vector Search for variation: [{}]", variant);
+            SearchRequest searchRequest = SearchRequest.builder()
+                    .query(variant)
+                    .topK(4)
+                    .filterExpression("documentId == '" + documentId + "'")
+                    .similarityThreshold(0.5)
+                    .build();
+
+            List<Document> chunks = vectorStore.similaritySearch(searchRequest);
+            combinedUniqueChunks.addAll(chunks);
+        }
+
+        if(combinedUniqueChunks.isEmpty()){
             return Flux.just(Map.of("text", "Sorry, I couldn't find any relevant information in this document."));
         }
 
-
-        // 3. Context Building
-        String context = similarChunks.stream()
+        // 4. Context Building from Unique Combined Chunks
+        String context = combinedUniqueChunks.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n\n----\n\n"));
 
-        log.info("Found {} relevant chunks. Initiating AI Stream...", similarChunks.size());
+        log.info("Total unique chunks collected across all queries: {}. Streaming response...", combinedUniqueChunks.size());
 
-        // 4. Prompt Engineering
+        int MAX_CONTEXT_CHARS = 16000;
+        if(context.length() > MAX_CONTEXT_CHARS){
+            log.warn("Context size ({}) too large for Groq! Truncating to {} characters.", context.length(), MAX_CONTEXT_CHARS);
+            context = context.substring(0, MAX_CONTEXT_CHARS) + "\n...[Context Truncated for Size]";
+        }
+
+        int MAX_HISTORY_CHARS = 2000;
+        if (chatHistory.length() > MAX_HISTORY_CHARS) {
+            // History mein humein purani baatein karni hain, isliye end ka text rakhenge
+            chatHistory = "...[History Truncated]...\n" + chatHistory.substring(chatHistory.length() - MAX_HISTORY_CHARS);
+        }
+
+        log.info("Final Prompt Payload Size - Context: {} chars, History: {} chars", context.length(), chatHistory.length());
+
+        // 5. Prompt Engineering
         String prompt = String.format(
                 "You are an intelligent document assistant named Abhi-Mind. Answer the user's question based strictly on the CONTEXT provided below.\n" +
                         "If the CONTEXT does not contain the answer, honestly say 'I do not have enough information in the document to answer this.' Do NOT use your outside knowledge.\n" +
@@ -93,6 +114,58 @@ public class DocumentQAService {
         }
     }
 
+
+    // HELPER METHOD: Generates 3 unique variants of user query using LLM (Synchronous Call)
+    private List<String> generateQueryVariations(String originalQuestion) {
+        String expansionPrompt = String.format(
+                "You are an AI assistant tasked with optimizing search queries for a vector database.\n" +
+                "Generate exactly 3 alternative versions of the following user question to capture different phrasings or synonyms.\n" +
+                "Rules:\n" +
+                "- Provide one variation per line.\n" +
+                "- Do NOT number them.\n" +
+                "- Do NOT add any extra explanation or text.\n\n" +
+                "User Question: %s", originalQuestion
+        );
+
+        List<String> variations = new ArrayList<>();
+        variations.add(originalQuestion); // Making Original Question as a base
+
+        try {
+            String response = groqClient.prompt(expansionPrompt).call().content();
+            if(response != null && !response.isBlank()){
+                String[] lines = response.split("\n");
+                for (String line: lines){
+                    if(!line.trim().isBlank()){
+                        variations.add(line.trim());
+                    }
+                }
+            }
+        } catch (Exception e){
+            log.warn("Groq failed for query expansion. Trying Gemini Fallback... Error: {}", e.getMessage());
+
+            try {
+                log.info("Generating query variations using Gemini...");
+                String response = geminiClient.prompt(expansionPrompt).call().content();
+
+                if (response != null && !response.isBlank()) {
+                    String[] lines = response.split("\n");
+                    for (String line : lines) {
+                        if (!line.trim().isBlank()) {
+                            variations.add(line.trim());
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                // Fallback : If Both AI is down
+                log.error("Both Groq and Gemini failed to generate query variations. Using only the original query.");
+            }
+        }
+
+        log.info("Total Queries for Expansion: {}", variations);
+        return variations;
+    }
+
+
     // Helper method for Fallback
     private Flux<Map<String, String>> fallbackToGeminiStream(String documentId, String question, String prompt){
         log.info("Streaming via Gemini fallback...");
@@ -109,3 +182,4 @@ public class DocumentQAService {
 
     }
 }
+
