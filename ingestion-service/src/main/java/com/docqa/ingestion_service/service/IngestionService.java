@@ -3,20 +3,13 @@ package com.docqa.ingestion_service.service;
 import com.docqa.ingestion_service.exception.DocumentProcessingException;
 import com.docqa.ingestion_service.kafka.KafkaPublisherService;
 import com.docqa.ingestion_service.model.DocumentMetadata;
-import com.docqa.ingestion_service.model.OutboxEvent;
 import com.docqa.ingestion_service.repository.DocumentRepository;
-import com.docqa.ingestion_service.repository.OutboxEventRepository;
 import com.docqa.ingestion_service.util.DocumentStatus;
-import com.docqa.ingestion_service.util.OutboxStatus;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.minio.BucketExistsArgs;
-import io.minio.MakeBucketArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
+import io.minio.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -47,19 +40,19 @@ public class IngestionService {
             throw new IllegalArgumentException("Invalid file format! Only PDF files are allowed");
         }
 
-        // 1. IDEMPOTENCY CHECK: File ka fingerprint (hash)
+        // 1. IDEMPOTENCY CHECK: Creating Unique Hashcode
         String fileHash = calculateChecksum(file);
 
-        // 2. Database me check karo kya ye fingerprint pehle se hai?
-        Optional<DocumentMetadata> existingDoc = documentRepository.findByFileHash(fileHash);
-        if(existingDoc.isPresent()){
-            String existingId = existingDoc.get().getDocumentId();
+        // 2. Checking in database if file already available or not
+        Optional<DocumentMetadata> existingDocFastCheck = documentRepository.findByFileHash(fileHash);
+        if(existingDocFastCheck.isPresent()){
+            String existingId = existingDocFastCheck.get().getDocumentId();
             log.info("Duplicate file detected! Skipping upload. Existing ID: {}", existingId);
-            // Agar file pehle se hai, toh purana ID bhej do aur yahin se return ho jao!
+            // If file is old then return the exist file id
             return existingId;
         }
 
-        // 3. Agar naya unique file hai - Generate a Unique ID
+        // 3. If file is new - Generate a Unique ID
         String documentId = UUID.randomUUID().toString();
         String objectName = documentId + ".pdf";
 
@@ -90,7 +83,7 @@ public class IngestionService {
                 log.info("File successfully saved to MinIO. Document ID: {}", documentId);
             }
 
-            // 6. Database me State Save karo (UPLOADED status ke sath)
+            // 6. Save Database State With UPLOADED status
             DocumentMetadata metadata = DocumentMetadata.builder()
                     .documentId(documentId)
                     .fileHash(fileHash)
@@ -101,11 +94,33 @@ public class IngestionService {
                     .createdAt(LocalDateTime.now())
                     .build();
 
-            documentRepository.save(metadata);
-            log.info("Metadata saved to database for Document ID: {}", documentId);
+            try{
+                documentRepository.save(metadata);
+                log.info("Metadata saved to database for Document ID: {}", documentId);
+            } catch (DataIntegrityViolationException e){
+                // THE SCALING FIX: Race Condition Caught!
+                log.warn("Concurrent upload detected! Another instance already saved hash: {}", fileHash);
+
+                log.info("Cleaning up MinIO object {} as document is duplicate", objectName);
+                // MINIO CLEANUP LOGIC
+
+                try {
+                    minioClient.removeObject(
+                            RemoveObjectArgs.builder()
+                                    .bucket(bucketName)
+                                    .object(objectName)
+                                    .build()
+                    );
+                    log.info("Successfully cleaned up duplicate MinIO object: {}", objectName);
+                } catch (Exception minioEx){
+                    log.error("Failed to delete duplicate MinIO object: {}. Manual cleanup might be needed.", objectName, minioEx);
+                }
+
+                Optional<DocumentMetadata> existingDoc = documentRepository.findByFileHash(fileHash);
+                return existingDoc.get().getDocumentId();
+            }
 
             // 7. Publish event to kafka (The Fire & Forget part)
-            // Hum ek simple JSON structure bhej rahe hain
             String eventPayload = String.format("{\"documentId\":\"%s\", \"status\":\"UPLOADED\"}", documentId);
             kafkaPublisherService.publishToKafka(documentId, eventPayload);
 
@@ -123,18 +138,25 @@ public class IngestionService {
     }
 
 
-    // Helper Method: SHA-256 Hash nikalne ke liye
+    // Helper Method: To Generate SHA-256 Hash Code
     private String calculateChecksum(MultipartFile file){
-        try {
-            byte[] data = file.getBytes();
-            byte[] hash = MessageDigest.getInstance("SHA-256").digest(data);
-            StringBuilder sb = new StringBuilder();
+        try(InputStream is = file.getInputStream()) {
 
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192]; // 8KB Buffer
+            int bytesRead;
+
+            while ((bytesRead = is.read(buffer)) != -1){
+                digest.update(buffer, 0, bytesRead);
+            }
+
+            byte[] hash = digest.digest();
+            StringBuilder sb = new StringBuilder();
             for (byte b: hash){
                 sb.append(String.format("%02x", b));
             }
-            return sb.toString();
 
+            return sb.toString();
         } catch (Exception e){
             log.error("Failed to calculate SHA-256 hash", e);
             throw new DocumentProcessingException("Failed to generate file fingerprint", e);
