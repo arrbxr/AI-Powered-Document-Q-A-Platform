@@ -59,3 +59,18 @@ eureka:
   client:
     serviceUrl:
       defaultZone: http://localhost:8761/eureka/
+
+
+# zipkin
+management:
+  tracing:
+    sampling:
+      probability: 1.0 # 🔥 1.0 ka matlab hai 100% requests ko trace karo (Production me ise 0.1 ya kam rakhte hain)
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans # Zipkin ka address
+
+# Logs mein Trace ID aur Span ID dikhane ke liye pattern set karna padta hai
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
