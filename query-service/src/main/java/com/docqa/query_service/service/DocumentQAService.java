@@ -65,7 +65,12 @@ public class DocumentQAService {
 
         // 4. Context Building from Unique Combined Chunks
         String context = combinedUniqueChunks.stream()
-                .map(Document::getText)
+                .map(doc -> {
+                    // Extracting metadata from vector database
+                    String pageNum = doc.getMetadata().getOrDefault("page_number", "Unknown").toString();
+                    // To Tell LLM where this paragraph came from.
+                    return String.format("[START_CHUNK_FROM_PAGE: %s]\n%s\n[END_CHUNK_FROM_PAGE]", pageNum, doc.getText());
+                })
                 .collect(Collectors.joining("\n\n----\n\n"));
 
         log.info("Total unique chunks collected across all queries: {}. Streaming response...", combinedUniqueChunks.size());
@@ -89,6 +94,10 @@ public class DocumentQAService {
                 "You are an intelligent document assistant named Abhi-Mind. Answer the user's question based strictly on the CONTEXT provided below.\n" +
                         "If the CONTEXT does not contain the answer, honestly say 'I do not have enough information in the document to answer this.' Do NOT use your outside knowledge.\n" +
                         "Use the RECENT CHAT HISTORY to understand the context if the user asks a follow-up question.\n\n" +
+                        "CRITICAL CITATION RULES:\n" +
+                        "- For every fact, statement, or point you mention in your answer, you MUST cite the exact page number where it comes from.\n" +
+                        "- Look at the '[START_CHUNK_FROM_PAGE: X]' tags in the context to identify the page number.\n" +
+                        "- Format your citation clearly at the end of the sentence or bullet point using standard Markdown bold text, like this: **(Source: Page X)**.\n\n" +
                         "RECENT CHAT HISTORY:\n%s\n\n" +
                         "CONTEXT:\n%s\n\n" +
                         "USER QUESTION: %s",
