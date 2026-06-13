@@ -19,25 +19,33 @@ public class DocumentProcessorService {
         log.info("Starting PDF parsing and chunking for Document ID: {}", documentId);
 
         try {
-            // 1. MinIO ke InputStream ko Spring 'Resource' mein convert kiya
+            // 1. Converting MinIO InputStream to Spring 'Resource'
             Resource resource = new InputStreamResource(pdfStream);
 
-            // 2. Extractor: PDF ke har page se text nikalega
+            // 2. Extract every page text from PDF
             PagePdfDocumentReader pdfReader = new PagePdfDocumentReader(resource);
             List<Document> rawDocuments = pdfReader.get();
             log.info("Extracted {} pages of raw text from PDF.", rawDocuments.size());
 
-            // 3. Chunker (Transformer): Text ko AI-friendly chunks mein todega
-            // By default, ye 800 tokens ka size aur 350 tokens ka overlap rakhta hai
+            // 3. Chunker (Transformer): AI-friendly chunks from Text
             TokenTextSplitter textSplitter = new TokenTextSplitter();
             List<Document> chunkedDocuments = textSplitter.apply(rawDocuments);
 
             log.info("Successfully split PDF into {} chunks for Document ID: {}", chunkedDocuments.size(), documentId);
 
-            // 4. Metadata Tagging: Har tukde ko batana padega ki wo kis document ka hai
-            // Taaki kal ko database mein search karte waqt pata rahe ki ye chunk kis PDF se aaya hai
+            // 4. Metadata Tagging: To tell every chunk belongs to which document
+            // So that later, when searching the database, it is known which PDF this chunk came from.
             for (Document chunk: chunkedDocuments){
+                // Adding Document ID
                 chunk.getMetadata().put("documentId", documentId);
+
+                // By default, Spring AI provide "page number"
+                // If not found then it initialize to 1
+                Object pageNum = chunk.getMetadata().getOrDefault("page_number", "1");
+
+                // Ensure pageNum is clear string without decimal points (e.g "1.0" to 1)
+                String cleanPageNum = pageNum.toString().replace(".0", "");
+                chunk.getMetadata().put("page_number", cleanPageNum);
             }
 
             return chunkedDocuments;
