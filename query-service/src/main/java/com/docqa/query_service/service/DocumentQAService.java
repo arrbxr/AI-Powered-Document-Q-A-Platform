@@ -3,14 +3,16 @@ package com.docqa.query_service.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -33,69 +35,77 @@ public class DocumentQAService {
         this.chatHistoryService = chatHistoryService;
     }
 
-
-    public String answerQuestion(String documentId, String question){
+    public Flux<Map<String, String>> streamAnswer(String documentId, String question){
         log.info("Searching Context for Document ID: {} | Question: {}", documentId, question);
 
-        // 1. Fetching History
+        // 1. Fetching history
         String chatHistory = chatHistoryService.getHistory(documentId);
 
-        // 2. Vector Database me Similarity Search + Metadata Filter
+        // 2. Search Similarity on vector database
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(question)
-                .topK(5) // Sabse relevant 5 paragraphs
-                .filterExpression("documentId == '" + documentId + "'") // Metadata filter
-                .similarityThreshold(0.5) // Optional: Sirf wahi lao jo 50% se zyada match ho
+                .topK(5)
+                .filterExpression("documentId == '" + documentId + "'")
+                .similarityThreshold(0.5)
                 .build();
 
         List<Document> similarChunks = vectorStore.similaritySearch(searchRequest);
 
         if(similarChunks.isEmpty()){
-            return "Sorry, I couldn't find any relevant information in this document.";
+            return Flux.just(Map.of("text", "Sorry, I couldn't find any relevant information in this document."));
         }
 
-        // 4. Un 3 paragraphs ko jod kar ek lamba text (Context) banao
+
+        // 3. Context Building
         String context = similarChunks.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n\n----\n\n"));
-        log.info("Found {} relevant chunks. Generating AI response...", similarChunks.size());
 
-        // 5. Strict Prompt Engineering
+        log.info("Found {} relevant chunks. Initiating AI Stream...", similarChunks.size());
+
+        // 4. Prompt Engineering
         String prompt = String.format(
                 "You are an intelligent document assistant named Abhi-Mind. Answer the user's question based strictly on the CONTEXT provided below.\n" +
                         "If the CONTEXT does not contain the answer, honestly say 'I do not have enough information in the document to answer this.' Do NOT use your outside knowledge.\n" +
-                        "Use the RECENT CHAT HISTORY to understand the context if the user asks a follow-up question (e.g., 'explain it more', 'what does that mean').\n\n" +
+                        "Use the RECENT CHAT HISTORY to understand the context if the user asks a follow-up question.\n\n" +
                         "RECENT CHAT HISTORY:\n%s\n\n" +
                         "CONTEXT:\n%s\n\n" +
                         "USER QUESTION: %s",
                 chatHistory, context, question
         );
 
-        // 6. To get the answer for AI
-        String aiAnswer;
-        try {
-            log.info("Trying Groq...");
-            aiAnswer = groqClient.prompt(prompt).call().content();
+        StringBuilder fullAiAnswer = new StringBuilder();
 
-        } catch (Exception e) {
-            log.error("Groq failed, switching to Gemini", e);
-
-            try {
-                log.info("Trying Gemini...");
-                aiAnswer = geminiClient.prompt(prompt).call().content();
-            } catch (Exception ex) {
-                log.error("Gemini also failed", ex);
-                throw new RuntimeException("Both AI providers failed");
-            }
+        try{
+            log.info("Streaming via Groq...");
+            return groqClient.prompt(prompt).stream().content()
+                    .delayElements(Duration.ofMillis(40))
+                    .doOnNext(fullAiAnswer::append)
+                    .map(chunk -> Map.of("text", chunk))
+                    .doOnComplete(() -> {
+                        log.info("Stream completed. Saving full answer to history.");
+                        chatHistoryService.saveHistory(documentId, question, fullAiAnswer.toString());
+                    })
+                    .onErrorResume(e -> fallbackToGeminiStream(documentId, question, prompt));
+        } catch (Exception e){
+            log.warn("Groq failed to initiate stream, falling back to Gemini", e);
+            return fallbackToGeminiStream(documentId, question, prompt);
         }
+    }
 
-        // 7. Saving history in database
-        try {
-            chatHistoryService.saveHistory(documentId, question, aiAnswer);
-        } catch (Exception e) {
-            log.error("Failed to save chat history", e);
-        }
+    // Helper method for Fallback
+    private Flux<Map<String, String>> fallbackToGeminiStream(String documentId, String question, String prompt){
+        log.info("Streaming via Gemini fallback...");
+        StringBuilder geminiFullAnswer = new StringBuilder();
 
-        return aiAnswer;
+        return geminiClient.prompt(prompt).stream().content()
+                .delayElements(Duration.ofMillis(40))
+                .doOnNext(geminiFullAnswer::append)
+                .map(chunk -> Map.of("text", chunk))
+                .doOnComplete(() -> {
+                    log.info("Gemini stream completed. Saving full answer to history.");
+                    chatHistoryService.saveHistory(documentId, question, geminiFullAnswer.toString());
+                }).onErrorResume(e -> Flux.just(Map.of("text", "Both Groq and Gemini failed to generate an answer.")));
+
     }
 }
