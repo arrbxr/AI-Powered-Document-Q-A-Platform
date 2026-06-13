@@ -45,3 +45,10 @@ spring:
         initialize-schema: false
         index-type: NONE
         distance-type: COSINE_DISTANCE
+
+
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
