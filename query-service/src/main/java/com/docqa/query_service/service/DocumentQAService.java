@@ -34,11 +34,11 @@ public class DocumentQAService {
         this.chatHistoryService = chatHistoryService;
     }
 
-    public Flux<Map<String, String>> streamAnswer(String documentId, String question){
-        log.info("Searching Context for Document ID: {} | Question: {}", documentId, question);
+    public Flux<Map<String, String>> streamAnswer(String workspaceId, String question){
+        log.info("Searching Context for Workspace ID: {} | Question: {}", workspaceId, question);
 
         // 1. Fetching history
-        String chatHistory = chatHistoryService.getHistory(documentId);
+        String chatHistory = chatHistoryService.getHistory(workspaceId);
 
         // 2. Query Expansion (Generate variations)
         List<String> queryVariation = generateQueryVariations(question);
@@ -51,7 +51,7 @@ public class DocumentQAService {
             SearchRequest searchRequest = SearchRequest.builder()
                     .query(variant)
                     .topK(4)
-                    .filterExpression("documentId == '" + documentId + "'")
+                    .filterExpression("workspaceId == '" + workspaceId + "'")
                     .similarityThreshold(0.5)
                     .build();
 
@@ -60,7 +60,7 @@ public class DocumentQAService {
         }
 
         if(combinedUniqueChunks.isEmpty()){
-            return Flux.just(Map.of("text", "Sorry, I couldn't find any relevant information in this document."));
+            return Flux.just(Map.of("text", "Sorry, I couldn't find any relevant information in this workspace."));
         }
 
         // 4. Context Building from Unique Combined Chunks
@@ -114,12 +114,12 @@ public class DocumentQAService {
                     .map(chunk -> Map.of("text", chunk))
                     .doOnComplete(() -> {
                         log.info("Stream completed. Saving full answer to history.");
-                        chatHistoryService.saveHistory(documentId, question, fullAiAnswer.toString());
+                        chatHistoryService.saveHistory(workspaceId, question, fullAiAnswer.toString());
                     })
-                    .onErrorResume(e -> fallbackToGeminiStream(documentId, question, prompt));
+                    .onErrorResume(e -> fallbackToGeminiStream(workspaceId, question, prompt));
         } catch (Exception e){
             log.warn("Groq failed to initiate stream, falling back to Gemini", e);
-            return fallbackToGeminiStream(documentId, question, prompt);
+            return fallbackToGeminiStream(workspaceId, question, prompt);
         }
     }
 
@@ -176,7 +176,7 @@ public class DocumentQAService {
 
 
     // Helper method for Fallback
-    private Flux<Map<String, String>> fallbackToGeminiStream(String documentId, String question, String prompt){
+    private Flux<Map<String, String>> fallbackToGeminiStream(String workspaceId, String question, String prompt){
         log.info("Streaming via Gemini fallback...");
         StringBuilder geminiFullAnswer = new StringBuilder();
 
@@ -186,7 +186,7 @@ public class DocumentQAService {
                 .map(chunk -> Map.of("text", chunk))
                 .doOnComplete(() -> {
                     log.info("Gemini stream completed. Saving full answer to history.");
-                    chatHistoryService.saveHistory(documentId, question, geminiFullAnswer.toString());
+                    chatHistoryService.saveHistory(workspaceId, question, geminiFullAnswer.toString());
                 }).onErrorResume(e -> Flux.just(Map.of("text", "Both Groq and Gemini failed to generate an answer.")));
 
     }

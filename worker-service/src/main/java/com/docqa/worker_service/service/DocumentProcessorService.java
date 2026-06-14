@@ -15,22 +15,21 @@ import java.util.List;
 @Slf4j
 public class DocumentProcessorService {
 
-    public List<Document> processPdf(InputStream pdfStream, String documentId){
-        log.info("Starting PDF parsing and chunking for Document ID: {}", documentId);
+    public List<Document> processPdf(InputStream pdfStream, String documentId, String workspaceId){
+        log.info("Starting PDF parsing and chunking for Document ID: {} in Workspace: {}", documentId, workspaceId);
 
         try {
             // 1. Converting MinIO InputStream to Spring 'Resource'
             Resource resource = new InputStreamResource(pdfStream);
-
             // 2. Extract every page text from PDF
             PagePdfDocumentReader pdfReader = new PagePdfDocumentReader(resource);
             List<Document> rawDocuments = pdfReader.get();
+
             log.info("Extracted {} pages of raw text from PDF.", rawDocuments.size());
 
             // 3. Chunker (Transformer): AI-friendly chunks from Text
             TokenTextSplitter textSplitter = new TokenTextSplitter();
             List<Document> chunkedDocuments = textSplitter.apply(rawDocuments);
-
             log.info("Successfully split PDF into {} chunks for Document ID: {}", chunkedDocuments.size(), documentId);
 
             // 4. Metadata Tagging: To tell every chunk belongs to which document
@@ -38,6 +37,8 @@ public class DocumentProcessorService {
             for (Document chunk: chunkedDocuments){
                 // Adding Document ID
                 chunk.getMetadata().put("documentId", documentId);
+
+                chunk.getMetadata().put("workspaceId", workspaceId);
 
                 // By default, Spring AI provide "page number"
                 // If not found then it initialize to 1

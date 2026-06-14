@@ -28,17 +28,17 @@ public class IngestionService {
 
 
     @Transactional
-    public String processUploadedFile(MultipartFile file){
+    public String processUploadedFile(MultipartFile file, String workspaceId){
         // 1. Validation & Hash
         FileHashUtil.validatePdf(file);
         String fileHash = FileHashUtil.calculateChecksum(file);
 
-        // 2. Checking in database if file already available or not
-        Optional<DocumentMetadata> existingDocFastCheck = documentRepository.findByFileHash(fileHash);
-        if(existingDocFastCheck.isPresent()){
-            String existingId = existingDocFastCheck.get().getDocumentId();
-            log.info("Duplicate file detected! Skipping upload. Existing ID: {}", existingId);
-            // If file is old then return the exist file id
+        // 2. Duplicate check on Workspace level
+        Optional<DocumentMetadata> existingDoc = documentRepository.findByFileHashAndWorkspaceId(fileHash, workspaceId);
+
+        if(existingDoc.isPresent()){
+            String existingId = existingDoc.get().getDocumentId();
+            log.info("Duplicate file detected in Workspace! Skipping upload. Existing ID: {}", existingId);
             return existingId;
         }
 
@@ -50,24 +50,27 @@ public class IngestionService {
         minioStorageService.uploadFile(file, objectName);
 
         try {
-              saveDocumentMetadata(documentId, fileHash, file.getOriginalFilename(), objectName);
+              saveDocumentMetadata(documentId, fileHash, file.getOriginalFilename(), objectName, workspaceId);
         }catch (DataIntegrityViolationException e) {
             log.warn("Concurrent upload detected for hash: {}", fileHash);
             minioStorageService.deleteFile(objectName); // Cleanup
-            return documentRepository.findByFileHash(fileHash).get().getDocumentId();
+            return documentRepository.findByFileHashAndWorkspaceId(fileHash, workspaceId).get().getDocumentId();
         }
 
         // 7. Publish event to kafka (The Fire & Forget part)
-        String eventPayload = String.format("{\"documentId\":\"%s\", \"status\":\"UPLOADED\"}", documentId);
+        String eventPayload = String.format("{\"documentId\":\"%s\", \"workspaceId\":\"%s\", \"status\":\"UPLOADED\"}",
+                documentId, workspaceId);
+
         kafkaPublisherService.publishToKafka(documentId, eventPayload);
 
         // Return the ID to the Controller so user gets a tracking number
         return documentId;
     }
 
-    private void saveDocumentMetadata(String docId, String hash, String fileName, String objectName) {
+    private void saveDocumentMetadata(String docId, String hash, String fileName, String objectName, String workspaceId) {
         DocumentMetadata metadata = DocumentMetadata.builder()
                 .documentId(docId)
+                .workspaceId(workspaceId)
                 .fileHash(hash)
                 .fileName(fileName)
                 .objectName(objectName)
@@ -76,7 +79,7 @@ public class IngestionService {
                 .createdAt(LocalDateTime.now())
                 .build();
         documentRepository.save(metadata);
-        log.info("Metadata saved to database for Document ID: {}", docId);
+        log.info("Metadata saved to database for Document ID: {} in Workspace: {}", docId, workspaceId);
     }
 
     public Optional<DocumentMetadata> checkDocumentStaus(String documentId){

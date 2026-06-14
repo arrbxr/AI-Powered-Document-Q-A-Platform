@@ -15,11 +15,16 @@ spring:
   # JPA configuration
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate # Stop hibernate to Update and just validate
     show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true # If Old table exist then don't delete them, just make one baseline
+    baseline-version: "0"
 
   # Kafka Producer Configuration
   kafka:

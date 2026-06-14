@@ -17,8 +17,8 @@ public class QueryController {
     private final DocumentQAService documentQAService;
 
     @GetMapping(value = "/ask", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<Map<String, String>> askQuestion(@RequestParam String documentId, @RequestParam String question){
-        return documentQAService.streamAnswer(documentId, question);
+    public Flux<Map<String, String>> askQuestion(@RequestParam String workspaceId, @RequestParam String question){
+        return documentQAService.streamAnswer(workspaceId, question);
     }
 
 }

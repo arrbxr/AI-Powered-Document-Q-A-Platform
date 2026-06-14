@@ -46,21 +46,25 @@ public class DocumentEventConsumer {
         log.info("Worker Thread [{}] received Document ID: [{}]", Thread.currentThread().getName(), rawMessage);
 
         try {
-            // JSON parse karke asli ID nikalna
-            String documentId = objectMapper.readTree(rawMessage).get("documentId").asText();
+            // Parsing JSON to extract documentID and workspaceId
+            var jsonNode = objectMapper.readTree(rawMessage);
+            // Extracting documentId
+            String documentId = jsonNode.get("documentId").asText();
             log.info("Extracted actual Document ID: [{}]", documentId);
 
-            // PHASE 2.1: DOWNLOAD PDF AS STREAM
+            // Extracting workspaceID
+            String workspaceId = jsonNode.has("workspaceId") ? jsonNode.get("workspaceId").asText() : "WS-DEFAULT";
+            log.info("Extracted -> Document ID: [{}], Workspace ID: [{}]", documentId, workspaceId);
+
+            // DOWNLOAD PDF AS STREAM
             InputStream pdfStream = minioStorageService.downloadDocument(documentId + ".pdf");
             log.info("Success! PDF stream opened for Document ID: {}", documentId);
 
-            // TODO: PHASE 2.2: PDF TEXT EXTRACTION & CHUNKING
-            // Yahan hum PDF ko text mein badal kar uske chote tukde karenge
-            List<Document> chunkedDocuments = documentProcessorService.processPdf(pdfStream, documentId);
+            // PDF TEXT EXTRACTION & CHUNKING
+            List<Document> chunkedDocuments = documentProcessorService.processPdf(pdfStream, documentId, workspaceId);
             log.info("Ready for AI! We have {} chunks waiting to be vectorized.", chunkedDocuments.size());
 
-
-            // TODO: Step 3: Embeddings banana aur pgvector mein save karna
+            // Saving Embedding in pgvector database
             log.info("Sending chunks to Gemini AI for Embedding generation...");
             // Storing embedded in postgresql pgvector
             storeEmbeddedinChucks(chunkedDocuments);

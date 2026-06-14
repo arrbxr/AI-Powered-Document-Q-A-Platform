@@ -21,17 +21,20 @@ public class DocumentController {
     private final IngestionService ingestionService;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> uploadDocument(@RequestParam("file") MultipartFile multipartFile){
-        log.info("Received upload request for file: {}", multipartFile.getOriginalFilename());
+    public ResponseEntity<?> uploadDocument(@RequestParam("file") MultipartFile multipartFile,
+                                            @RequestParam(value = "workspaceId", defaultValue = "WS-DEFAULT") String workspaceId){
+
+        log.info("Received upload request for file: {} in Workspace: {}", multipartFile.getOriginalFilename(), workspaceId);
 
         // Service ko file pass karo aur Document ID receive karo
-        String documentId = ingestionService.processUploadedFile(multipartFile);
+        String documentId = ingestionService.processUploadedFile(multipartFile, workspaceId);
 
         // 200 OK, ke sath proper JSON response bhejo
         return ResponseEntity.ok(Map.of(
-           "status", "success",
+                "status", "success",
                 "message", "Document uploaded successfully and queued for processing.",
-                "documentId", documentId
+                "documentId", documentId,
+                "workspaceId", workspaceId
         ));
     }
 

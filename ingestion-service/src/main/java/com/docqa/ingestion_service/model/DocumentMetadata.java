@@ -31,4 +31,8 @@ public class DocumentMetadata {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+
+    @Column(name = "workspace_id", nullable = false)
+    private String workspaceId;
+
 }
