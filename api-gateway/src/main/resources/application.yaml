@@ -20,7 +20,7 @@ spring:
         - id: ingestion-service
           uri: http://localhost:8081
           predicates:
-            - Path=/api/v1/documents/**
+            - Path=/api/v1/documents/**, /api/v1/workspaces/**
 
         - id: query-service
           uri: http://localhost:8083

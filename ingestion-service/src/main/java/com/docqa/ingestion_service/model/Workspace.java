@@ -18,7 +18,7 @@ public class Workspace {
     @Id
     private String workspaceId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String name; // e.g  Financial report
 
     private LocalDateTime createdAt;

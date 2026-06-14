@@ -18,6 +18,13 @@ public class WorkspaceService {
 
     // Creating Workspace folder
     public Workspace createWorkspace(String name){
+
+        if (workspaceRepository.existsByNameIgnoreCase(name)) {
+            log.warn("Workspace creation failed. Name already exists: {}", name);
+            // Custom exception ya normal exception throw karo
+            throw new IllegalArgumentException("A workspace with this name already exists.");
+        }
+
         Workspace workspace = Workspace.builder()
                 .name(name)
                 .createdAt(LocalDateTime.now())
