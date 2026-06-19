@@ -12,9 +12,16 @@ spring:
           '[/**]':
             allowedOrigins:
               - "http://localhost:5173"
-              - "http://192.168.1.10:5173"
-            allowedMethods: "*"
+              - "http://localhost:4200"
+              - "http://192.168.1.15:4200"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
             allowedHeaders: "*"
+            allowCredentials: true
 
       routes:
         - id: ingestion-service

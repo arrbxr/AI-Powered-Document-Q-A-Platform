@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,37 +34,55 @@ public class IngestionService {
         FileHashUtil.validatePdf(file);
         String fileHash = FileHashUtil.calculateChecksum(file);
 
-        // 2. Duplicate check on Workspace level
-        Optional<DocumentMetadata> existingDoc = documentRepository.findByFileHashAndWorkspaceId(fileHash, workspaceId);
-
-        if(existingDoc.isPresent()){
-            String existingId = existingDoc.get().getDocumentId();
-            log.info("Duplicate file detected in Workspace! Skipping upload. Existing ID: {}", existingId);
+        // 2. Exact Duplicate Check (Same File in Same Workspace)
+        Optional<DocumentMetadata> workspaceDoc = documentRepository.findByFileHashAndWorkspaceId(fileHash, workspaceId);
+        if(workspaceDoc.isPresent()){
+            String existingId = workspaceDoc.get().getDocumentId();
+            log.info("Duplicate file detected in THIS Workspace! Skipping everything. ID: {}", existingId);
             return existingId;
         }
 
-        // 3. If file is new - Generate a Unique ID
+        // 3. Global Duplicate Check (Storage Optimization for MinIO)
+        Optional<DocumentMetadata> globalDoc = documentRepository.findFirstByFileHash(fileHash);
+
         String documentId = UUID.randomUUID().toString();
-        String objectName = documentId + ".pdf";
+        String objectName;
+        boolean isNewToSystem = false; // Flag check karne ke liye ki file sach mein nayi hai ya nahi
 
-        // 4. Upload to MiniIO
-        minioStorageService.uploadFile(file, objectName);
-
-        try {
-              saveDocumentMetadata(documentId, fileHash, file.getOriginalFilename(), objectName, workspaceId);
-        }catch (DataIntegrityViolationException e) {
-            log.warn("Concurrent upload detected for hash: {}", fileHash);
-            minioStorageService.deleteFile(objectName); // Cleanup
-            return documentRepository.findByFileHashAndWorkspaceId(fileHash, workspaceId).get().getDocumentId();
+        if (globalDoc.isPresent()) {
+            // FILE KAHIN AUR MAUJOOD HAI!
+            // MinIO par upload nahi karenge, purana objectName chura lenge
+            objectName = globalDoc.get().getObjectName();
+            log.info("File already exists in another workspace. Reusing MinIO Object: {} to save storage!", objectName);
+        } else {
+            // FILE EKDUM NAYI HAI SYSTEM KE LIYE
+            objectName = documentId + ".pdf";
+            isNewToSystem = true;
+            minioStorageService.uploadFile(file, objectName); // Sirf tabhi MinIO ko hit karo
         }
 
-        // 7. Publish event to kafka (The Fire & Forget part)
+        // 4. Save Metadata & Handle Race Conditions
+        try {
+            saveDocumentMetadata(documentId, fileHash, file.getOriginalFilename(), objectName, workspaceId);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("Database constraint violation (Race Condition) for hash: {}", fileHash);
+
+            // Agar humne galti se nayi file MinIO par daal di thi, toh usko clean karo
+            if (isNewToSystem) {
+                minioStorageService.deleteFile(objectName);
+            }
+            // SAFE RETURN: Agar concurrent transaction mein kuch aage-peeche hua, toh crash nahi karega
+            return documentRepository.findByFileHashAndWorkspaceId(fileHash, workspaceId)
+                    .map(DocumentMetadata::getDocumentId)
+                    .orElse(documentId); // Agar DB mein na mile (rare case), toh jo naya ID banaya tha wahi de do
+        }
+
+        // 5. Publish event to kafka (Worker Service naye Workspace ke liye vector banayegi)
         String eventPayload = String.format("{\"documentId\":\"%s\", \"workspaceId\":\"%s\", \"status\":\"UPLOADED\"}",
                 documentId, workspaceId);
 
         kafkaPublisherService.publishToKafka(documentId, eventPayload);
 
-        // Return the ID to the Controller so user gets a tracking number
         return documentId;
     }
 
@@ -82,8 +101,18 @@ public class IngestionService {
         log.info("Metadata saved to database for Document ID: {} in Workspace: {}", docId, workspaceId);
     }
 
-    public Optional<DocumentMetadata> checkDocumentStaus(String documentId){
-        return documentRepository.findById(documentId);
+    public String checkWorkspaceStatus(String workspaceId){
+        List<DocumentMetadata> docs = documentRepository.findByWorkspaceId(workspaceId);
+
+        if (docs.isEmpty()) {
+            return "NOT_FOUND";
+        }
+
+        // Check karega ki kya koi aisi file hai jo abhi COMPLETED nahi hui hai
+        boolean isProcessing = docs.stream()
+                .anyMatch(doc -> doc.getStatus() != DocumentStatus.COMPLETED);
+
+        return isProcessing ? "PROCESSING" : "COMPLETED";
     }
 }
 

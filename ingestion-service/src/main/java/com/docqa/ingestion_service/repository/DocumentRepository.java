@@ -16,4 +16,6 @@ public interface DocumentRepository extends JpaRepository<DocumentMetadata, Stri
 
     // Duplicate check with workspace context
     Optional<DocumentMetadata> findByFileHashAndWorkspaceId(String fileHash, String workspaceId);
+
+    Optional<DocumentMetadata> findFirstByFileHash(String fileHash);
 }

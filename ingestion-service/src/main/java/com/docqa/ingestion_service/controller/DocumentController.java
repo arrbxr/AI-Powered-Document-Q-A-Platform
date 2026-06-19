@@ -38,11 +38,14 @@ public class DocumentController {
         ));
     }
 
-    @GetMapping("/status/{documentId}")
-    public ResponseEntity<Map<String, String>> getDocumentStatus(@PathVariable String documentId){
-        return ingestionService.checkDocumentStaus(documentId)
-                .map(doc -> ResponseEntity.ok(Map.of("status", doc.getStatus().name())))
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    @GetMapping("/status/{workspaceId}")
+    public ResponseEntity<Map<String, String>> checkWorkspaceStatus(@PathVariable String workspaceId) {
+        String status = ingestionService.checkWorkspaceStatus(workspaceId);
+
+        if ("NOT_FOUND".equals(status)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of("status", status));
     }
 
 }

@@ -50,7 +50,7 @@ public class DocumentQAService {
             log.info("Running Vector Search for variation: [{}]", variant);
             SearchRequest searchRequest = SearchRequest.builder()
                     .query(variant)
-                    .topK(4)
+                    .topK(10)
                     .filterExpression("workspaceId == '" + workspaceId + "'")
                     .similarityThreshold(0.5)
                     .build();
@@ -66,10 +66,15 @@ public class DocumentQAService {
         // 4. Context Building from Unique Combined Chunks
         String context = combinedUniqueChunks.stream()
                 .map(doc -> {
-                    // Extracting metadata from vector database
-                    String pageNum = doc.getMetadata().getOrDefault("page_number", "Unknown").toString();
-                    // To Tell LLM where this paragraph came from.
-                    return String.format("[START_CHUNK_FROM_PAGE: %s]\n%s\n[END_CHUNK_FROM_PAGE]", pageNum, doc.getText());
+                    Map<String, Object> metadata = doc.getMetadata();
+                    String pageNum = metadata.containsKey("page_number") ? metadata.get("page_number").toString() : "1";
+
+                    // file_name nikalna (Agar tumne save kiya hai toh aayega, warna fallback UUID lega)
+                    String sourceName = metadata.containsKey("file_name") ? metadata.get("file_name").toString()
+                            : (metadata.containsKey("documentId") ? metadata.get("documentId").toString() : "Unknown_Doc");
+
+                    // Tags ko naye prompt ke hisaab se format kiya
+                    return String.format("[START_CHUNK_FROM_SOURCE: %s | PAGE: %s]\n%s\n[END_CHUNK]", sourceName, pageNum, doc.getText());
                 })
                 .collect(Collectors.joining("\n\n----\n\n"));
 
@@ -91,16 +96,19 @@ public class DocumentQAService {
 
         // 5. Prompt Engineering
         String prompt = String.format(
-                "You are an intelligent document assistant named Abhi-Mind. Answer the user's question based strictly on the CONTEXT provided below.\n" +
-                        "If the CONTEXT does not contain the answer, honestly say 'I do not have enough information in the document to answer this.' Do NOT use your outside knowledge.\n" +
-                        "Use the RECENT CHAT HISTORY to understand the context if the user asks a follow-up question.\n\n" +
-                        "CRITICAL CITATION RULES:\n" +
-                        "- For every fact, statement, or point you mention in your answer, you MUST cite the exact page number where it comes from.\n" +
-                        "- Look at the '[START_CHUNK_FROM_PAGE: X]' tags in the context to identify the page number.\n" +
-                        "- Format your citation clearly at the end of the sentence or bullet point using standard Markdown bold text, like this: **(Source: Page X)**.\n\n" +
-                        "RECENT CHAT HISTORY:\n%s\n\n" +
-                        "CONTEXT:\n%s\n\n" +
-                        "USER QUESTION: %s",
+                "You are 'Abhi-Mind', an advanced enterprise document intelligence assistant. Your primary task is to answer the user's question based strictly and exclusively on the provided CONTEXT.\n\n" +
+                        "### CORE BEHAVIOR\n" +
+                        "1. STRICT CONTEXT LIMIT: If the answer is not contained within the CONTEXT, you must explicitly state: 'I do not have enough information in the provided documents to answer this.' Do NOT use outside knowledge.\n" +
+                        "2. MULTI-DOCUMENT COMPARISON & ANALYSIS: The CONTEXT may contain chunks from multiple different documents. If the user asks to compare them (e.g., 'which is best', 'differences'), deeply analyze all documents, weigh them against the user's criteria, and provide a structured comparative answer.\n" +
+                        "3. HIGH-QUALITY FORMATTING: Always structure your output professionally. Use Markdown formatting, headings (###), bullet points, and tables where applicable to make your response easy to read.\n\n" +
+                        "### MANDATORY CITATION RULES (CRITICAL)\n" +
+                        "- You MUST cite your sources for EVERY piece of information, claim, or comparison you make.\n" +
+                        "- Look at the chunk metadata provided in the CONTEXT to identify the Document Name and Page Number.\n" +
+                        "- Place the citation immediately after the relevant sentence or at the end of a bullet point.\n" +
+                        "- Use EXACTLY this format: **[Source: {Document Name}, Page {X}]**.\n\n" +
+                        "### RECENT CHAT HISTORY:\n%s\n\n" +
+                        "### CONTEXT:\n%s\n\n" +
+                        "### USER QUESTION:\n%s",
                 chatHistory, context, question
         );
 
